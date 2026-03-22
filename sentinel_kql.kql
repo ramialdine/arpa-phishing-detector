@@ -1,0 +1,158 @@
+// ============================================================================
+// .arpa PHISHING DETECTION QUERIES
+// Detects abuse of .arpa DNS infrastructure for phishing delivery
+//
+// Research: Infoblox Threat Intel - February 2026
+// Context:  Attackers use free IPv6 tunnels to acquire /64 blocks,
+//           gain delegation of ip6.arpa subdomains, create A records
+//           (not PTR), and use these FQDNs as phishing delivery URLs
+//           hidden inside email image hyperlinks.
+// ============================================================================
+
+
+// ============================================================================
+// MICROSOFT SENTINEL (KQL) QUERIES
+// ============================================================================
+
+
+// ----------------------------------------------------------------------------
+// [KQL-1] .arpa domains in HTTP/HTTPS web traffic (Proxy / Web Gateway logs)
+//
+// Data source: CommonSecurityLog (Proxy, ZScaler, Palo Alto, etc.)
+// Tactic:      Initial Access / Command and Control
+// Technique:   T1566.002 (Phishing: Spearphishing Link)
+// ----------------------------------------------------------------------------
+
+CommonSecurityLog
+| where TimeGenerated > ago(7d)
+| where DeviceEventClassID has_any ("proxy", "web", "http")
+| where RequestURL has ".arpa"
+      or DestinationHostName has ".arpa"
+| extend
+    IsIp6Arpa         = RequestURL has "ip6.arpa" or DestinationHostName has "ip6.arpa",
+    IsInAddrArpa      = RequestURL has "in-addr.arpa" or DestinationHostName has "in-addr.arpa",
+    HostnameLen       = strlen(DestinationHostName),
+    // DGA prefix: the part before the nibble run
+    // Extracts leading labels that appear before a single hex char
+    HasNibblePattern  = DestinationHostName matches regex @"([0-9a-f]\.){8,}ip6\.arpa"
+| where IsIp6Arpa or IsInAddrArpa
+| project
+    TimeGenerated,
+    SourceIP,
+    DestinationHostName,
+    RequestURL,
+    IsIp6Arpa,
+    HasNibblePattern,
+    HostnameLen,
+    RequestClientApplication,
+    DeviceVendor,
+    DeviceProduct
+| order by TimeGenerated desc
+
+
+// ----------------------------------------------------------------------------
+// [KQL-2] .arpa domains in email links (Email security logs)
+//
+// Data source: EmailUrlInfo (Defender for Office 365 / MDO)
+// Tactic:      Initial Access
+// Technique:   T1566.002 (Phishing: Spearphishing Link)
+// Priority:    HIGH — this is the primary delivery vector
+// ----------------------------------------------------------------------------
+
+EmailUrlInfo
+| where TimeGenerated > ago(14d)
+| where Url has ".arpa"
+| extend
+    IsIp6Arpa        = Url has "ip6.arpa",
+    IsInAddrArpa     = Url has "in-addr.arpa",
+    ExtractedHost    = tostring(parse_url(Url)["Host"]),
+    HasNibblePattern = Url matches regex @"([0-9a-f]\.){8,}ip6\.arpa",
+    HasDGAPrefix     = Url matches regex @"[a-z]{6,15}\.([0-9a-f]\.){4,}ip6\.arpa"
+| join kind=inner EmailEvents on NetworkMessageId
+| project
+    TimeGenerated,
+    NetworkMessageId,
+    SenderFromAddress,
+    RecipientEmailAddress,
+    Subject,
+    Url,
+    ExtractedHost,
+    IsIp6Arpa,
+    HasNibblePattern,
+    HasDGAPrefix,
+    DeliveryAction,
+    DetectionMethods
+| where IsIp6Arpa or IsInAddrArpa
+| order by TimeGenerated desc
+
+
+// ----------------------------------------------------------------------------
+// [KQL-3] High-confidence .arpa phishing composite rule
+//
+// Score-based approach: requires multiple signals to fire
+// Reduces false positives vs. simple TLD match
+// ----------------------------------------------------------------------------
+
+let ArpaWebTraffic =
+    CommonSecurityLog
+    | where TimeGenerated > ago(7d)
+    | where DestinationHostName has ".arpa"
+    | extend
+        Signal_ArpaTLD        = iff(DestinationHostName has ".arpa", 25, 0),
+        Signal_Ip6Arpa        = iff(DestinationHostName has "ip6.arpa", 10, 0),
+        Signal_NibblePattern  = iff(DestinationHostName matches regex @"([0-9a-f]\.){8,}ip6\.arpa", 20, 0),
+        Signal_DGAPrefix      = iff(DestinationHostName matches regex @"^[a-z]{6,15}\.([0-9a-f]\.){4,}ip6\.arpa", 15, 0),
+        Signal_LongHostname   = iff(strlen(DestinationHostName) > 40, 10, 0),
+        Signal_HttpContext     = iff(ApplicationProtocol in~ ("http","https"), 10, 0)
+    | extend RiskScore = Signal_ArpaTLD + Signal_Ip6Arpa + Signal_NibblePattern + Signal_DGAPrefix + Signal_LongHostname + Signal_HttpContext
+    | where RiskScore >= 61  // HIGH threshold
+    | project TimeGenerated, SourceIP, DestinationHostName, RiskScore, ApplicationProtocol;
+
+ArpaWebTraffic
+| order by RiskScore desc, TimeGenerated desc
+
+
+// ----------------------------------------------------------------------------
+// [KQL-4] DNS query logs for .arpa A-record resolutions (anomaly)
+//
+// Data source: DnsEvents (Azure DNS analytics / Defender)
+// Legitimate .arpa queries should return PTR records, not A/AAAA
+// An .arpa domain that resolves via A record is a strong anomaly
+// ----------------------------------------------------------------------------
+
+DnsEvents
+| where TimeGenerated > ago(7d)
+| where Name has ".arpa"
+| where QueryType == "A" or QueryType == "AAAA"
+| extend
+    IsIp6Arpa    = Name has "ip6.arpa",
+    IsInAddr     = Name has "in-addr.arpa",
+    HasNibbles   = Name matches regex @"([0-9a-f]\.){4,}ip6\.arpa"
+| where IsIp6Arpa or IsInAddr
+| summarize
+    QueryCount     = count(),
+    UniqueClients  = dcount(ClientIP),
+    FirstSeen      = min(TimeGenerated),
+    LastSeen       = max(TimeGenerated),
+    SampleClients  = make_set(ClientIP, 5)
+    by Name, IsIp6Arpa, HasNibbles
+| where QueryCount > 0
+| order by QueryCount desc
+
+
+// ----------------------------------------------------------------------------
+// [KQL-5] Dangling CNAME hijack detection (companion query)
+//
+// Data source: DnsEvents
+// Identifies CNAME records pointing to recently registered / suspicious domains
+// This is the second major technique in the same phishing campaign
+// ----------------------------------------------------------------------------
+
+DnsEvents
+| where TimeGenerated > ago(7d)
+| where QueryType == "CNAME"
+| extend CNAMETarget = tostring(parse_json(tostring(Answers))[0])
+| where CNAMETarget matches regex @"\.(sbs|shop|store|makeup|beauty|fun|click|xyz)\."
+      or CNAMETarget matches regex @"[a-z0-9]{8,}\.(com|net|org)\."
+| project TimeGenerated, Name, CNAMETarget, ClientIP
+| order by TimeGenerated desc

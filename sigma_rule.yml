@@ -1,0 +1,163 @@
+title: '.arpa TLD Abuse for Phishing Infrastructure'
+id: a7b3c2d1-e4f5-6789-ab01-cd23ef456789
+status: experimental
+description: |
+    Detects abuse of the .arpa top-level domain for phishing delivery.
+    Attackers use free IPv6 tunnel services to acquire /64 address blocks,
+    gain delegation over the corresponding ip6.arpa subdomain, and create
+    A records (rather than PTR records) that resolve to phishing content.
+    
+    The malicious domain is embedded in email image hyperlinks, hidden from
+    the victim. Traditional defenses fail because .arpa has an implicitly
+    trusted reputation, no WHOIS data, and is excluded from policy blocklists.
+    
+    First documented by Infoblox Threat Intel, February 2026.
+    
+    IOC patterns (Infoblox):
+      <10 random letters>.5.2.1.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa
+      <10 random letters>.d.d.e.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa
+      <10 random letters>.9.a.d.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa
+
+author: 'Rami Jamal Aldine — arpa-phish-detect project'
+date: 2026/03/22
+modified: 2026/03/22
+
+references:
+    - 'https://www.infoblox.com/blog/threat-intelligence/abusing-arpa-the-tld-that-isnt-supposed-to-host-anything/'
+    - 'https://cybersecuritynews.com/phishing-schemes-abuse-arpa-tld-and-ipv6-tunnels/'
+    - 'https://www.iana.org/domains/arpa'
+
+tags:
+    - attack.initial_access
+    - attack.t1566.002        # Phishing: Spearphishing Link
+    - attack.t1583.001        # Acquire Infrastructure: Domains
+    - attack.t1071.001        # Application Layer Protocol: Web Protocols
+    - attack.defense_evasion
+    - attack.t1036            # Masquerading
+
+logsource:
+    category: proxy
+    product: '*'
+
+# ── Primary rule: .arpa domain in HTTP/HTTPS context ─────────────────────
+detection:
+    selection_arpa_web:
+        cs-host|contains:
+            - '.ip6.arpa'
+            - '.in-addr.arpa'
+        # Limit to web protocols to avoid FP from legitimate PTR queries
+        cs-method|exists: true
+
+    # Must match nibble pattern (hex.hex.hex...ip6.arpa)
+    filter_nibble:
+        cs-host|re: '([0-9a-f]\.){4,}ip6\.arpa$'
+
+    # High-confidence: DGA prefix before nibble run
+    selection_dga_prefix:
+        cs-host|re: '^[a-z]{6,15}\.([0-9a-f]\.){4,}ip6\.arpa$'
+
+    condition: (selection_arpa_web and filter_nibble) or selection_dga_prefix
+
+falsepositives:
+    - 'Legitimate DNS tooling or debugging that uses .arpa domains over HTTP (very rare)'
+    - 'Security research or threat hunting infrastructure'
+    - 'DNS-over-HTTPS resolvers (check if destination is a known DoH provider)'
+
+level: high
+
+fields:
+    - cs-host
+    - cs-uri
+    - c-ip
+    - sc-status
+    - cs-user-agent
+
+---
+
+# ── Variant: .arpa domain in email URL logs ───────────────────────────────
+
+title: '.arpa Domain in Email URL — Phishing Link Delivery'
+id: b8c4d3e2-f5a6-7890-bc12-de34fa567890
+status: experimental
+description: |
+    Detects .arpa domains appearing in email URL logs.
+    This is the primary delivery mechanism: phishing emails contain
+    a hyperlinked image with the .arpa domain in the href attribute.
+    The domain is never displayed to the victim.
+    
+    Correlate with email sender, subject, and whether user clicked the link.
+
+author: 'Rami Jamal Aldine — arpa-phish-detect project'
+date: 2026/03/22
+
+references:
+    - 'https://www.infoblox.com/blog/threat-intelligence/abusing-arpa-the-tld-that-isnt-supposed-to-host-anything/'
+
+tags:
+    - attack.initial_access
+    - attack.t1566.002
+
+logsource:
+    category: email
+    product: '*'
+
+detection:
+    selection:
+        email_url|contains:
+            - '.ip6.arpa'
+            - '.in-addr.arpa'
+
+    selection_high_confidence:
+        email_url|re: '(https?://)[a-z]{6,15}\.([0-9a-f]\.){4,}ip6\.arpa'
+
+    condition: selection or selection_high_confidence
+
+falsepositives:
+    - 'Legitimate newsletters that reference DNS infrastructure topics (extremely rare)'
+
+level: high
+
+---
+
+# ── Variant: DNS A/AAAA query against .arpa (behavioral anomaly) ─────────
+
+title: 'DNS Type A Query Against .arpa Domain (Infrastructure Abuse)'
+id: c9d5e4f3-a6b7-8901-cd23-ef45ab678901
+status: experimental
+description: |
+    Detects DNS A or AAAA record queries against .arpa domains.
+    Legitimate .arpa queries are PTR lookups (reverse DNS).
+    An A/AAAA query against an .arpa hostname indicates the domain
+    is being used as a web endpoint — the core anomaly of this attack.
+
+author: 'Rami Jamal Aldine — arpa-phish-detect project'
+date: 2026/03/22
+
+tags:
+    - attack.initial_access
+    - attack.t1566.002
+    - attack.defense_evasion
+    - attack.t1036
+
+logsource:
+    category: dns
+    product: '*'
+
+detection:
+    selection:
+        dns.question.name|contains:
+            - '.ip6.arpa'
+            - '.in-addr.arpa'
+        dns.question.type:
+            - 'A'
+            - 'AAAA'
+            - '1'     # numeric type code for A
+            - '28'    # numeric type code for AAAA
+
+    condition: selection
+
+falsepositives:
+    - 'DNS resolvers performing validation checks (rare)'
+    - 'Security tools probing .arpa namespace for research'
+
+level: medium

@@ -1,0 +1,144 @@
+| ============================================================================
+| .arpa PHISHING DETECTION — SPLUNK SPL QUERIES
+|
+| Research: Infoblox Threat Intel — February 2026
+| Coverage:
+|   - .arpa domains in web proxy traffic (Squid, Bluecoat, Palo Alto)
+|   - .arpa domains in email links (O365 / Exchange logs)
+|   - DNS query anomalies (A queries against .arpa)
+|   - Composite risk-scored detection
+| ============================================================================
+
+
+| ============================================================================
+| [SPL-1] .arpa domains in web traffic
+| Source: Proxy / Firewall logs (CIM Web Datamodel)
+| ============================================================================
+
+index=proxy OR index=web OR index=firewall sourcetype=*
+| search url="*.arpa*" OR dest_host="*.arpa"
+| eval is_ip6_arpa=if(match(url, "ip6\.arpa") OR match(dest_host, "ip6\.arpa"), 1, 0)
+| eval is_inaddr_arpa=if(match(url, "in-addr\.arpa") OR match(dest_host, "in-addr\.arpa"), 1, 0)
+| eval has_nibble_pattern=if(match(dest_host, "([0-9a-f]\.){8,}ip6\.arpa"), 1, 0)
+| eval has_dga_prefix=if(match(dest_host, "^[a-z]{6,15}\.([0-9a-f]\.){4,}ip6\.arpa"), 1, 0)
+| eval hostname_length=len(dest_host)
+| where is_ip6_arpa=1 OR is_inaddr_arpa=1
+| table _time, src_ip, dest_host, url, is_ip6_arpa, has_nibble_pattern, has_dga_prefix, hostname_length, http_method, action
+| sort - _time
+
+
+| ============================================================================
+| [SPL-2] Composite risk-scored detection (mirrors Python engine logic)
+| Source: Proxy logs
+| ============================================================================
+
+index=proxy OR index=web sourcetype=*
+| search dest_host="*.arpa" OR url="*.arpa*"
+| eval signal_arpa_tld=if(match(dest_host, "\.arpa$"), 25, 0)
+| eval signal_ip6_arpa=if(match(dest_host, "ip6\.arpa"), 10, 0)
+| eval signal_inaddr_arpa=if(match(dest_host, "in-addr\.arpa") AND NOT match(dest_host, "ip6\.arpa"), 5, 0)
+| eval signal_nibble_pattern=if(match(dest_host, "([0-9a-f]\.){8,}ip6\.arpa"), 20, 0)
+| eval signal_dga_prefix=if(match(dest_host, "^[a-z]{6,15}\.([0-9a-f]\.){4,}ip6\.arpa"), 15, 0)
+| eval signal_long_hostname=if(len(dest_host) > 40, 10, 0)
+| eval signal_very_long=if(len(dest_host) > 70, 5, 0)
+| eval signal_http=if(match(url, "^https?://"), 10, 0)
+| eval risk_score=signal_arpa_tld + signal_ip6_arpa + signal_inaddr_arpa + signal_nibble_pattern + signal_dga_prefix + signal_long_hostname + signal_very_long + signal_http
+| eval risk_score=if(risk_score > 100, 100, risk_score)
+| eval verdict=case(risk_score >= 61, "HIGH", risk_score >= 31, "MEDIUM", true(), "LOW")
+| where verdict="HIGH" OR verdict="MEDIUM"
+| table _time, src_ip, dest_host, risk_score, verdict, signal_arpa_tld, signal_nibble_pattern, signal_dga_prefix
+| sort - risk_score
+
+
+| ============================================================================
+| [SPL-3] .arpa domains in email links (O365 / Exchange)
+| Source: o365:management:activity or exchange logs
+| Priority: HIGH — primary delivery vector
+| ============================================================================
+
+index=o365 OR index=email sourcetype="o365:management:activity"
+(Operation="MessageCreated" OR Operation="Send" OR Operation="Receive" OR Operation="UrlClicked")
+| rex field=URLs "(?P<email_url>https?://[^\s,\"']+\.arpa[^\s,\"']*)"
+| where isnotnull(email_url)
+| eval is_ip6_arpa=if(match(email_url, "ip6\.arpa"), 1, 0)
+| eval has_nibble_pattern=if(match(email_url, "([0-9a-f]\.){8,}ip6\.arpa"), 1, 0)
+| eval has_dga_prefix=if(match(email_url, "[a-z]{6,15}\.([0-9a-f]\.){4,}ip6\.arpa"), 1, 0)
+| table _time, src_user, dest_user, Subject, email_url, is_ip6_arpa, has_dga_prefix, has_nibble_pattern
+| sort - _time
+
+
+| ============================================================================
+| [SPL-4] DNS anomaly — A/AAAA query against .arpa domain
+| Source: DNS server logs / Zeek DNS
+| Context: .arpa domains should only return PTR records.
+|          An A record response for .arpa is a strong behavioral anomaly.
+| ============================================================================
+
+index=dns sourcetype=bro:dns:json OR sourcetype="stream:dns" OR sourcetype=dns
+| search query="*.ip6.arpa" OR query="*.in-addr.arpa"
+| where qtype_name="A" OR qtype_name="AAAA"
+| eval is_anomaly=if(match(query, "ip6\.arpa") OR match(query, "in-addr\.arpa"), 1, 0)
+| eval has_nibble=if(match(query, "([0-9a-f]\.){4,}ip6\.arpa"), 1, 0)
+| eval has_dga=if(match(query, "[a-z]{6,15}\.([0-9a-f]\.){4,}ip6\.arpa"), 1, 0)
+| stats count AS query_count, dc(id_orig_h) AS unique_clients, first(_time) AS first_seen, last(_time) AS last_seen, values(id_orig_h) AS client_ips
+    by query, qtype_name, has_nibble, has_dga
+| where is_anomaly=1
+| sort - query_count
+
+
+| ============================================================================
+| [SPL-5] Threat hunt — historical sweep for known IPv6 blocks (IOC-based)
+| Source: DNS, Proxy, Email logs
+| IOCs from Infoblox Threat Intel report (Feb 2026)
+| ============================================================================
+
+index=* (
+    "5.2.1.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa"
+    OR "d.d.e.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa"
+    OR "1.9.5.0.9.1.0.0.0.7.4.0.1.0.0.2.ip6.arpa"
+    OR "8.1.9.5.0.9.1.0.0.0.7.4.0.1.0.0.2.ip6.arpa"
+    OR "9.a.d.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa"
+)
+| rex "(?P<matched_ioc>[a-z0-9]+\.[0-9a-f.]+(ip6|in-addr)\.arpa)"
+| stats count, values(sourcetype), first(_time) AS first_seen, last(_time) AS last_seen, values(src) AS sources
+    by matched_ioc
+| sort - count
+
+
+| ============================================================================
+| [SPL-6] TDS (Traffic Distribution System) domain detection
+| Source: Proxy logs
+| Context: Attackers use TDS domains as intermediate redirectors before
+|          the final phishing page. Detecting TDS helps map the full
+|          kill chain even when the .arpa domain itself is missed.
+| Known TDS domains from Infoblox report:
+|   dulcetoj.com, golandof.com, politeche.com, taktwo.com, toindom.com
+| ============================================================================
+
+index=proxy sourcetype=*
+| search (url="*dulcetoj.com*" OR url="*golandof.com*" OR url="*politeche.com*"
+          OR url="*taktwo.com*" OR url="*toindom.com*")
+| stats count AS hit_count, dc(src_ip) AS unique_sources, first(_time) AS first_seen
+    by dest_host, url
+| sort - hit_count
+
+
+| ============================================================================
+| [SPL-7] Dashboard summary — .arpa threat overview
+| Use in a Splunk dashboard for continuous monitoring
+| ============================================================================
+
+index=proxy OR index=dns OR index=email sourcetype=*
+| search dest_host="*.arpa" OR url="*.arpa*" OR query="*.arpa"
+| eval log_source=case(
+    sourcetype="bro:dns:json",    "DNS",
+    sourcetype="stream:dns",      "DNS",
+    sourcetype="o365:management", "Email",
+    match(sourcetype, "proxy"),   "Proxy",
+    true(),                       "Other"
+)
+| eval is_ip6_arpa=if(match(coalesce(dest_host, url, query), "ip6\.arpa"), 1, 0)
+| eval is_suspicious=if(match(coalesce(dest_host, url, query), "[a-z]{6,15}\.([0-9a-f]\.){4,}ip6\.arpa"), 1, 0)
+| stats count AS total_hits, sum(is_ip6_arpa) AS ip6_hits, sum(is_suspicious) AS suspicious_hits
+    by log_source, date_mday
+| sort - date_mday

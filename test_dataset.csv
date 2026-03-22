@@ -1,0 +1,31 @@
+input,type,expected_verdict,label,notes,is_email_delivered
+# ── MALICIOUS: .arpa phishing (from Infoblox IOC report) ─────────────────────
+https://abcdefghij.5.2.1.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa,url,high,malicious,Exact IOC pattern from Infoblox report - DGA prefix + ip6.arpa + HTTPS context,True
+https://xkzpqmwrtu.d.d.e.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa,url,high,malicious,Variant of Infoblox IOC - different nibble block same pattern,True
+http://pqrstuabcd.1.9.5.0.9.1.0.0.0.7.4.0.1.0.0.2.ip6.arpa,url,high,malicious,HTTP variant - different IPv6 range,True
+http://randomxyz00.9.a.d.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa,url,high,malicious,Alphanumeric DGA prefix,True
+https://lmnoabcdef.8.1.9.5.0.9.1.0.0.0.7.4.0.1.0.0.2.ip6.arpa,url,high,malicious,Third IPv6 block variant from Infoblox,True
+# ── MALICIOUS: hostname-only format (email href) ──────────────────────────────
+abcdefghij.5.2.1.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa,hostname,high,malicious,Hostname extracted from email image href,True
+xkzpqmwrtu.d.d.e.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa,hostname,high,malicious,Hostname-only version of known IOC,True
+# ── MALICIOUS: edge cases / variants ─────────────────────────────────────────
+https://abcdefghijkl.1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa,url,high,malicious,Full 32-nibble reverse DNS with 12-char DGA prefix,True
+http://qwertyman.0.0.2.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.2.ip6.arpa/track,url,high,malicious,With path component (tracking endpoint),True
+# ── BENIGN: legitimate .arpa PTR lookup domains ───────────────────────────────
+1.0.0.127.in-addr.arpa,hostname,low,benign,Legitimate PTR lookup for 127.0.0.1 (loopback),False
+4.3.2.1.in-addr.arpa,hostname,low,benign,Legitimate IPv4 PTR lookup,False
+1.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa,hostname,low,benign,Legitimate full IPv6 PTR lookup - no DGA prefix,False
+0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa,hostname,low,benign,All-zeros IPv6 PTR (legitimate infra),False
+# ── MEDIUM RISK: partial signals / ambiguous ──────────────────────────────────
+https://5.2.1.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa,url,medium,medium_risk,ip6.arpa in HTTPS context but NO DGA prefix - partial signal,False
+http://1.9.5.0.9.1.0.0.0.7.4.0.1.0.0.2.ip6.arpa,url,medium,medium_risk,ip6.arpa HTTP without prefix - suspicious but incomplete pattern,False
+255.255.255.in-addr.arpa,hostname,medium,medium_risk,Unusual in-addr.arpa usage - not a full octet string,False
+# ── COMPARISON: standard phishing domains (non-.arpa) ────────────────────────
+https://secure-paypal-verify.phishingsite.com/login,url,low,comparison_phish,Classic phishing domain - different TLD evasion method,False
+https://amazon-prize-claim.shop/redeem?id=abc123,url,low,comparison_phish,Prize phishing - same lure different delivery mechanism,False
+https://microsoft365-account-suspended.net/verify,url,low,comparison_phish,Brand impersonation phishing,False
+# ── COMPARISON: legitimate infrastructure domains ─────────────────────────────
+https://google.com/search?q=test,url,low,benign,Known good domain,False
+https://microsoft.com,url,low,benign,Known good domain,False
+dns.google,hostname,low,benign,Google public DNS - legitimate DNS infrastructure,False
+ns1.cloudflare.com,hostname,low,benign,Legitimate CDN nameserver,False
