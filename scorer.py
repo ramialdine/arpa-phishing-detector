@@ -228,13 +228,14 @@ class Scorer:
             name="LONG_HOSTNAME",
             weight=10,
             description=(
-                f"Hostname length ({f.hostname_length} chars) exceeds 40 characters. "
+                f"Hostname length ({f.hostname_length} chars) is 40+ characters. "
                 "While legitimate PTR domains are inherently long by design, a long "
                 ".arpa domain appearing as a web link or email hyperlink is a strong "
-                "contextual anomaly."
+                "contextual anomaly. The confirmed malicious base pattern "
+                "'d.d.e.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa' is exactly 40 chars."
             ),
         )
-        s.triggered = f.hostname_length > 40
+        s.triggered = f.hostname_length >= 40
         if s.triggered:
             s.detail = f"{f.hostname_length} chars"
         signals.append(s)
@@ -243,15 +244,35 @@ class Scorer:
             name="VERY_LONG_HOSTNAME",
             weight=5,
             description=(
-                f"Hostname length ({f.hostname_length} chars) exceeds 70 characters. "
+                f"Hostname length ({f.hostname_length} chars) is 70+ characters. "
                 "Full IPv6 reverse DNS strings with a prepended DGA prefix typically "
-                "reach 70–90 chars — this length strongly suggests a weaponized "
-                "IPv6 reverse-DNS FQDN."
+                "reach 70–90 chars."
             ),
         )
-        s.triggered = f.hostname_length > 70
+        s.triggered = f.hostname_length >= 70
         if s.triggered:
-            s.detail = f"{f.hostname_length} chars (very long)"
+            s.detail = f"{f.hostname_length} chars"
+        signals.append(s)
+
+        s = Signal(
+            name="PARTIAL_NIBBLE_DELEGATION",
+            weight=10,
+            description=(
+                "Domain contains a PARTIAL IPv6 nibble sequence (fewer than 32 nibbles), "
+                "indicating it represents an attacker-delegated IPv6 block (e.g. /64, /48) "
+                "rather than a single host PTR record. In the documented attack, the threat "
+                "actor controls a /64 block, which produces exactly 16 nibble labels. "
+                "Confirmed IOC base patterns like 'd.d.e.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa' "
+                "have exactly 16 nibbles and represent the attacker's delegated infrastructure."
+            ),
+        )
+        s.triggered = (
+            f.has_ipv6_nibble_pattern
+            and f.nibble_run_length < 32
+            and f.nibble_run_length >= 8   # at least a /80 — avoid noise from tiny runs
+        )
+        if s.triggered:
+            s.detail = f"{f.nibble_run_length} nibbles (partial block delegation)"
         signals.append(s)
 
         s = Signal(
@@ -301,25 +322,29 @@ class Scorer:
 
         s = Signal(
             name="LIKELY_LEGIT_PTR",
-            weight=-25,          # negative: reduces score
+            weight=-25,
             description=(
-                "Domain matches the pattern of a legitimate PTR-only record: "
-                "contains a full IPv6 nibble sequence but has NO random DGA prefix "
-                "and is NOT used in HTTP/HTTPS context. Legitimate reverse-DNS "
-                "infrastructure commonly looks like this. Score reduced to reflect "
-                "lower phishing probability — but re-evaluate if HTTP context or "
-                "email delivery is later confirmed."
+                "Domain appears to be a legitimate FULL 32-nibble IPv6 PTR record: "
+                "all 32 nibble labels are present (a complete single IPv6 address "
+                "reversal), no DGA prefix, not in HTTP context, not email-delivered. "
+                "Partial nibble strings (e.g. 16 nibbles representing a /64 block) "
+                "are NOT eligible for this reduction — attacker-delegated /64 blocks "
+                "only produce partial nibble strings, not full 32-nibble records."
             ),
         )
-        # Fire only when: has nibble pattern, NO DGA prefix, NOT in HTTP context
+        # CRITICAL: only reduce score for FULL 32-nibble PTR records.
+        # A partial string like d.d.e.0.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa
+        # has 16 nibbles (a /64 delegation block) — this is the attacker's
+        # infrastructure base, NOT a legitimate PTR record. Do not reduce.
+        is_full_32_nibble = f.nibble_run_length >= 32
         s.triggered = (
-            f.has_ipv6_nibble_pattern
+            is_full_32_nibble
             and not f.has_dga_prefix
             and not f.used_in_http_context
             and not f.is_email_delivered
         )
         if s.triggered:
-            s.detail = "no DGA prefix, no HTTP context → likely legitimate PTR"
+            s.detail = f"full {f.nibble_run_length}-nibble PTR, no DGA prefix, no HTTP"
         signals.append(s)
 
         return signals
