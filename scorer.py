@@ -8,13 +8,7 @@ Every triggered signal includes a human-readable explanation — no black box.
 
 from dataclasses import dataclass, field
 from typing import List
-
-try:
-    # Package-style import
-    from .extractor import Features
-except ImportError:
-    # Flat-layout fallback (running scripts from project root)
-    from extractor import Features
+from .extractor import Features
 
 
 # ---------------------------------------------------------------------------
@@ -306,16 +300,61 @@ class Scorer:
         signals.append(s)
 
         s = Signal(
+            name="RESOLVES_AS_A_RECORD",
+            weight=15,
+            description=(
+                "Domain returned an A or AAAA record when queried — meaning it "
+                "resolves to an IP address like a normal website. This is the core "
+                "technical anomaly: .arpa domains are ONLY supposed to answer PTR "
+                "queries (reverse DNS lookups). An .arpa hostname that resolves via "
+                "A record has been deliberately configured to serve web content, "
+                "which is exactly what attackers do when abusing this namespace."
+            ),
+        )
+        s.triggered = f.dns_resolved
+        if s.triggered:
+            s.detail = f"resolved to: {f.dns_ips}"
+        signals.append(s)
+
+        s = Signal(
             name="CDN_RESOLUTION",
             weight=10,
             description=(
-                "Domain resolves to a known CDN or proxy provider IP range. "
-                "Attackers configure their .arpa domain to point to CDN infrastructure "
-                "(e.g., Cloudflare), which masks the true phishing server origin, "
-                "inherits the CDN's trusted reputation, and makes takedown harder."
+                "Resolved IP falls within a known CDN or proxy provider range "
+                "(Cloudflare, Fastly, Akamai, CloudFront). Attackers route .arpa "
+                "domains through CDN infrastructure to mask the true phishing server "
+                "origin, inherit the CDN's clean reputation, and make takedown harder. "
+                "The Infoblox report confirmed the observed IOC domains resolved to "
+                "Cloudflare edge IPs specifically."
             ),
         )
         s.triggered = cdn_resolved
+        if s.triggered:
+            s.detail = f"CDN IP: {f.dns_ips}"
+        signals.append(s)
+
+        s = Signal(
+            name="DNS_NO_RESPONSE",
+            weight=5,
+            description=(
+                "Live DNS resolution was attempted but the domain returned no A/AAAA "
+                "records. For confirmed .arpa phishing IOCs this is expected — "
+                "Infoblox documented that phishing links are only active for a few "
+                "days before going dark. A non-resolving .arpa domain is not evidence "
+                "of legitimacy; it may simply be an expired or rotated phishing asset. "
+                "Structural signals remain valid regardless of current resolution."
+            ),
+        )
+        # Only fire when DNS was actually attempted AND the domain returned nothing.
+        # dns_was_checked is set to True in __init__.py only after get_resolution_summary() runs.
+        # Without this guard, the signal would fire on every suspicious .arpa domain
+        # even when the user never enabled DNS resolution.
+        s.triggered = (
+            f.dns_was_checked              # DNS was actually run
+            and not f.dns_resolved         # but domain returned no A/AAAA record
+            and f.is_arpa_tld             # and it's a .arpa domain
+            and f.has_ipv6_nibble_pattern  # with structural suspicion
+        )
         signals.append(s)
 
         # ── Tier 3: Negative signals (reduce score for likely-legitimate patterns) ──

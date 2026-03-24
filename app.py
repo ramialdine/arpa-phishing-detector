@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import streamlit as st
 from detector import analyze_url, analyze_hostname, extract_links, summarize_links
-from extractor import FeatureExtractor
-from dns_utils import get_resolution_summary
+from detector.extractor import FeatureExtractor
+from detector.dns_utils import get_resolution_summary
 
 
 # ---------------------------------------------------------------------------
@@ -46,83 +46,11 @@ st.markdown("""
 
 
 # ---------------------------------------------------------------------------
-# Render helpers
-# ---------------------------------------------------------------------------
-
-def _render_result(result, compact: bool = False):
-    """Render score, verdict, signals, and explanation."""
-    verdict_class = f"verdict-{result.verdict}"
-    verdict_label = {"high": "🔴 HIGH RISK", "medium": "🟡 MEDIUM RISK", "low": "🟢 LOW RISK"}.get(result.verdict, result.verdict)
-
-    col_score, col_verdict, col_host = st.columns([1, 2, 3])
-
-    with col_score:
-        st.metric("Risk Score", f"{result.score}/100")
-
-    with col_verdict:
-        st.markdown(f'<span class="{verdict_class}">{verdict_label}</span>', unsafe_allow_html=True)
-
-    with col_host:
-        st.markdown(f"**Hostname:** `{result.features.hostname}`")
-
-    # Score bar
-    bar_pct = result.score
-    bar_color = {"high": "#FF4B4B", "medium": "#FFA500", "low": "#21C55D"}.get(result.verdict, "#888")
-    st.markdown(
-        f"""<div class="score-bar-bg"><div style="width:{bar_pct}%;background:{bar_color};height:20px;border-radius:4px;transition:width 0.5s;"></div></div>""",
-        unsafe_allow_html=True
-    )
-
-    st.markdown("")
-
-    # Triggered signals
-    if result.triggered_signals:
-        if not compact:
-            st.markdown("#### 🚨 Triggered Signals")
-        for sig in result.triggered_signals:
-            detail_text = f" · `{sig.detail}`" if sig.detail else ""
-            st.markdown(
-                f"""<div class="signal-card">
-                <b>[+{sig.weight} pts] {sig.name}</b>{detail_text}<br/>
-                <small>{sig.description}</small>
-                </div>""",
-                unsafe_allow_html=True
-            )
-    else:
-        st.success("No suspicious signals triggered.")
-
-    # Explanation
-    if not compact:
-        st.markdown("#### 📝 Explanation")
-    st.info(result.explanation)
-
-    # Feature dump (expandable)
-    with st.expander("🔬 Raw Feature Values", expanded=False):
-        feat = result.features.to_dict()
-        st.json(feat)
-
-
-def _render_dns_info(dns_info: dict):
-    """Render DNS resolution results."""
-    st.markdown("#### 🌐 DNS Resolution")
-    cols = st.columns(3)
-    cols[0].metric("Resolved", "✅ Yes" if dns_info["resolved"] else "❌ No")
-    cols[1].metric("CDN Detected", "⚠️ Yes" if dns_info["cdn_resolved"] else "✅ No")
-    cols[2].metric("A Record Anomaly", "⚠️ Yes" if dns_info["resolution_anomaly"] else "✅ No")
-
-    if dns_info["ip_addresses"]:
-        st.markdown("**Resolved IPs:**")
-        for ip in dns_info["ip_addresses"]:
-            cdn_tag = " 🏭 CDN" if ip in dns_info["cdn_ips"] else ""
-            st.code(f"{ip}{cdn_tag}")
-
-
-# ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.image("https://img.shields.io/badge/.arpa-Phish%20Detector-red?style=for-the-badge", use_container_width=True)
+    st.image("https://img.shields.io/badge/.arpa-Phish%20Detector-red?style=for-the-badge", use_column_width=True)
     st.markdown("### ⚙️ Settings")
 
     run_dns = st.toggle("🌐 Live DNS Resolution", value=False, help="Resolve hostname and check for CDN IPs. Adds latency.")
@@ -232,11 +160,9 @@ with tab1:
 
         _render_result(result)
 
-        # DNS resolution details
-        if run_dns:
-            with st.spinner("Running DNS resolution..."):
-                dns_info = get_resolution_summary(result.features.hostname)
-            _render_dns_info(dns_info)
+        # DNS results are now embedded directly in triggered signals via
+        # RESOLVES_AS_A_RECORD, CDN_RESOLUTION, and DNS_NO_RESPONSE signals.
+        # No separate display block needed.
 
 
 # ── Tab 2: Email content ──────────────────────────────────────────────────
@@ -342,3 +268,79 @@ with tab3:
                 _render_result(r, compact=True)
 
 
+# ---------------------------------------------------------------------------
+# Render helpers  (defined after tabs so they can be called from tab code)
+# ---------------------------------------------------------------------------
+
+def _render_result(result, compact: bool = False):
+    """Render score, verdict, signals, and explanation."""
+    verdict_class = f"verdict-{result.verdict}"
+    verdict_label = {"high": "🔴 HIGH RISK", "medium": "🟡 MEDIUM RISK", "low": "🟢 LOW RISK"}.get(result.verdict, result.verdict)
+
+    col_score, col_verdict, col_host = st.columns([1, 2, 3])
+
+    with col_score:
+        st.metric("Risk Score", f"{result.score}/100")
+
+    with col_verdict:
+        st.markdown(f'<span class="{verdict_class}">{verdict_label}</span>', unsafe_allow_html=True)
+
+    with col_host:
+        st.markdown(f"**Hostname:** `{result.features.hostname}`")
+
+    # Score bar
+    bar_pct = result.score
+    bar_color = {"high": "#FF4B4B", "medium": "#FFA500", "low": "#21C55D"}.get(result.verdict, "#888")
+    st.markdown(
+        f"""<div class="score-bar-bg"><div style="width:{bar_pct}%;background:{bar_color};height:20px;border-radius:4px;transition:width 0.5s;"></div></div>""",
+        unsafe_allow_html=True
+    )
+
+    st.markdown("")
+
+    # Triggered signals
+    if result.triggered_signals:
+        if not compact:
+            st.markdown("#### 🚨 Triggered Signals")
+        for sig in result.triggered_signals:
+            detail_text = f" · `{sig.detail}`" if sig.detail else ""
+            st.markdown(
+                f"""<div class="signal-card">
+                <b>[+{sig.weight} pts] {sig.name}</b>{detail_text}<br/>
+                <small>{sig.description}</small>
+                </div>""",
+                unsafe_allow_html=True
+            )
+    else:
+        st.success("No suspicious signals triggered.")
+
+    # Explanation
+    if not compact:
+        st.markdown("#### 📝 Explanation")
+    st.info(result.explanation)
+
+    # Feature dump (expandable)
+    with st.expander("🔬 Raw Feature Values", expanded=False):
+        feat = result.features.to_dict()
+        st.json(feat)
+
+
+def _render_dns_info(dns_info: dict):
+    """Render DNS resolution results."""
+    st.markdown("#### 🌐 DNS Resolution")
+    cols = st.columns(3)
+    cols[0].metric("Resolved", "✅ Yes" if dns_info["resolved"] else "❌ No")
+    cols[1].metric("CDN Detected", "⚠️ Yes" if dns_info["cdn_resolved"] else "✅ No")
+    cols[2].metric("A Record Anomaly", "⚠️ Yes" if dns_info["resolution_anomaly"] else "✅ No")
+
+    if dns_info["ip_addresses"]:
+        st.markdown("**Resolved IPs:**")
+        for ip in dns_info["ip_addresses"]:
+            cdn_tag = " 🏭 CDN" if ip in dns_info["cdn_ips"] else ""
+            st.code(f"{ip}{cdn_tag}")
+
+
+# Re-render note: In Streamlit, functions used in tabs must be defined before
+# the tab code runs, OR the tab code must be in a callback/function itself.
+# Since Streamlit reruns top-to-bottom, define helpers at module level before use.
+# The current structure works because Streamlit's button callbacks trigger reruns.

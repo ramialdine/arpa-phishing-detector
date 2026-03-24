@@ -45,6 +45,12 @@ class Features:
     # Behavioral / contextual features
     used_in_http_context: bool = False   # scheme is http or https
 
+    # DNS resolution results (set externally after live DNS check)
+    dns_resolved: bool = False           # domain returned any A/AAAA record (anomaly for .arpa)
+    dns_cdn_resolved: bool = False       # resolved IP falls in a known CDN range
+    dns_ips: str = ""                    # comma-separated resolved IPs (stored as str for dataclass simplicity)
+    dns_was_checked: bool = False        # True if live DNS resolution was actually attempted
+
     def to_dict(self) -> dict:
         return self.__dict__
 
