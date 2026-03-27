@@ -92,7 +92,7 @@ class ScoringResult:
 # ---------------------------------------------------------------------------
 #
 #  Tier 1 — Structural (domain construction)
-#    ARPA_TLD              25   Core signal: domain is in reserved .arpa namespace
+#    ARPA_TLD              15   Core signal: domain is in reserved .arpa namespace
 #    IP6_ARPA_ZONE         10   Specifically in IPv6 reverse-DNS zone
 #    INADDR_ARPA_ZONE       5   Specifically in IPv4 reverse-DNS zone (less suspicious)
 #    IPV6_NIBBLE_PATTERN   20   Contains reversed IPv6 nibble notation
@@ -101,11 +101,12 @@ class ScoringResult:
 #  Tier 2 — Contextual (usage behavior)
 #    LONG_HOSTNAME         10   Length > 40 chars (additive)
 #    VERY_LONG_HOSTNAME     5   Length > 70 chars (additive bonus)
-#    HTTP_CONTEXT          10   Used as a web URL — infrastructure domains shouldn't be
+#    HTTP_CONTEXT          12   Used as a web URL — infrastructure domains shouldn't be
 #    EMAIL_DELIVERED       10   Embedded in email — matches known phishing delivery pattern
+#    RESOLVES_AS_A_RECORD  25   .arpa hostname returned A/AAAA (strong technical violation)
 #    CDN_RESOLUTION        10   Resolves to CDN/proxy IP (Cloudflare, Fastly, etc.)
 #
-#  Maximum raw score: 120 → capped at 100
+#  Maximum raw score: 127 → capped at 100
 #
 #  Verdict thresholds:
 #    0 – 30   → LOW
@@ -152,7 +153,7 @@ class Scorer:
 
         s = Signal(
             name="ARPA_TLD",
-            weight=25,
+            weight=15,
             description=(
                 ".arpa TLD detected. This namespace is exclusively reserved for "
                 "internet DNS infrastructure (RFC 3172). It was never designed to "
@@ -277,7 +278,7 @@ class Scorer:
 
         s = Signal(
             name="HTTP_CONTEXT",
-            weight=10,
+            weight=12,
             description=(
                 "Domain is used in an HTTP or HTTPS URL. DNS infrastructure domains "
                 "in the .arpa namespace should never resolve to web servers. An "
@@ -307,7 +308,7 @@ class Scorer:
 
         s = Signal(
             name="RESOLVES_AS_A_RECORD",
-            weight=15,
+            weight=25,
             description=(
                 "Domain returned an A or AAAA record when queried — meaning it "
                 "resolves to an IP address like a normal website. This is the core "

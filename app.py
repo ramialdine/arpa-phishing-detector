@@ -82,10 +82,13 @@ with st.sidebar:
     st.divider()
     st.markdown("**Scoring Weights:**")
     weights = {
-        "ARPA_TLD": 25, "IP6_ARPA_ZONE": 10, "INADDR_ARPA_ZONE": 5,
+        "ARPA_TLD": 15, "IP6_ARPA_ZONE": 10, "INADDR_ARPA_ZONE": 5,
         "IPV6_NIBBLE_PATTERN": 20, "DGA_PREFIX": 15,
         "LONG_HOSTNAME": 10, "VERY_LONG_HOSTNAME": 5,
-        "HTTP_CONTEXT": 10, "EMAIL_DELIVERED": 10, "CDN_RESOLUTION": 10
+        "PARTIAL_NIBBLE_DELEGATION": 10,
+        "HTTP_CONTEXT": 12, "EMAIL_DELIVERED": 10,
+        "RESOLVES_AS_A_RECORD": 25, "CDN_RESOLUTION": 10,
+        "DNS_NO_RESPONSE": 5, "LIKELY_LEGIT_PTR": -25,
     }
     for name, w in weights.items():
         st.markdown(f"`{name}` → **{w} pts**")
