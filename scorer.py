@@ -286,7 +286,7 @@ class Scorer:
                 "this attack technique."
             ),
         )
-        s.triggered = f.used_in_http_context
+        s.triggered = f.is_arpa_tld and f.used_in_http_context
         if s.triggered:
             s.detail = f"scheme={f.scheme}"
         signals.append(s)
@@ -302,7 +302,7 @@ class Scorer:
                 "image and never notice the domain in the link."
             ),
         )
-        s.triggered = f.is_email_delivered
+        s.triggered = f.is_arpa_tld and f.is_email_delivered
         signals.append(s)
 
         s = Signal(
@@ -317,7 +317,7 @@ class Scorer:
                 "which is exactly what attackers do when abusing this namespace."
             ),
         )
-        s.triggered = f.dns_resolved
+        s.triggered = f.is_arpa_tld and f.dns_resolved
         if s.triggered:
             s.detail = f"resolved to: {f.dns_ips}"
         signals.append(s)
@@ -334,7 +334,7 @@ class Scorer:
                 "Cloudflare edge IPs specifically."
             ),
         )
-        s.triggered = cdn_resolved
+        s.triggered = f.is_arpa_tld and cdn_resolved
         if s.triggered:
             s.detail = f"CDN IP: {f.dns_ips}"
         signals.append(s)

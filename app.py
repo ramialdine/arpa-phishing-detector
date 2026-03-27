@@ -51,7 +51,7 @@ st.markdown("""
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.image("https://img.shields.io/badge/.arpa-Phish%20Detector-red?style=for-the-badge", use_column_width=True)
+    st.image("https://img.shields.io/badge/.arpa-Phish%20Detector-red?style=for-the-badge", use_container_width=True)
     st.markdown("### ⚙️ Settings")
 
     run_dns = st.toggle("🌐 Live DNS Resolution", value=False, help="Resolve hostname and check for CDN IPs. Adds latency.")
@@ -246,16 +246,11 @@ with tab2:
     st.markdown("Paste raw email HTML or plain text. The detector will extract all links and analyze each one.")
     st.info("💡 Phishing emails using .arpa domains typically contain **a single hyperlinked image**. The malicious domain is hidden in the `href` — not visible to the user.")
 
-    email_content = st.text_area(
-        "Paste email content:",
-        height=250,
-        placeholder="<html><body><a href='https://abcdefghij.5.2.1.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa'><img src='https://cdn.example.com/promo.png'></a></body></html>",
-        key="email_content"
-    )
+    if "email_content" not in st.session_state:
+        st.session_state["email_content"] = ""
 
-    # Sample email button
-    if st.button("📩 Load sample phishing email"):
-        email_content = """<html>
+    def _load_sample_email():
+        st.session_state["email_content"] = """<html>
 <body style="margin:0;padding:0;">
 <p>You have been selected for a special reward!</p>
 <a href="https://abcdefghij.5.2.1.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa/track?id=victim123">
@@ -265,7 +260,15 @@ with tab2:
 </a>
 <p style="font-size:8px;color:#ccc;">To unsubscribe click <a href="https://unsubscribe.example.com">here</a></p>
 </body></html>"""
-        st.rerun()
+
+    st.button("📩 Load sample phishing email", on_click=_load_sample_email)
+
+    email_content = st.text_area(
+        "Paste email content:",
+        height=250,
+        placeholder="<html><body><a href='https://abcdefghij.5.2.1.6.3.0.0.0.7.4.0.1.0.0.2.ip6.arpa'><img src='https://cdn.example.com/promo.png'></a></body></html>",
+        key="email_content"
+    )
 
     analyze_email_btn = st.button("🔍 Extract & Analyze Links", type="primary", key="analyze_email")
 
