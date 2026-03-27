@@ -61,7 +61,7 @@ class Features:
 
 # Loose match: 4+ single hex chars separated by dots, preceding ip6.arpa
 _IPV6_NIBBLE_RE = re.compile(
-    r'((?:[0-9a-f]\.){4,32})ip6\.arpa',
+    r'((?:[0-9a-f]\.){4,32})ip6\.arpa$',  # $ anchors to end — prevents ip6.arpa.com matching
     re.IGNORECASE
 )
 
@@ -134,8 +134,13 @@ class FeatureExtractor:
 
         # --- TLD / zone checks ---
         features.is_arpa_tld = hostname.endswith(".arpa") or hostname == "arpa"
-        features.is_ip6_arpa = "ip6.arpa" in hostname
-        features.is_inaddr_arpa = bool(_INADDR_RE.search(hostname)) and not features.is_ip6_arpa
+        # Use endswith() not substring match — prevents .ip6.arpa.com from triggering
+        features.is_ip6_arpa = hostname.endswith(".ip6.arpa") or hostname == "ip6.arpa"
+        features.is_inaddr_arpa = (
+            bool(_INADDR_RE.search(hostname))
+            and not features.is_ip6_arpa
+            and hostname.endswith(".arpa")  # must actually be .arpa TLD
+        )
 
         # --- IPv6 nibble pattern ---
         m = _IPV6_NIBBLE_RE.search(hostname)
