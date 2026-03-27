@@ -108,19 +108,18 @@ for cidr in _CDN_CIDRS_RAW:
 # Public API
 # ---------------------------------------------------------------------------
 
-def resolve_a_records(hostname: str, timeout: float = 3.0) -> list[str]:
+def resolve_a_records(hostname: str) -> list[str]:
     """
     Resolve hostname to IPv4/IPv6 addresses.
 
     Returns a list of IP address strings, or an empty list if resolution fails.
+    Uses the system DNS resolver's default timeout.
 
     NOTE: For .arpa domains used in phishing, we expect to find A/AAAA records
     where only PTR records should exist — the detection signal is the resolution
     itself, not what it resolves to specifically.
     """
     ips: list[str] = []
-    original_timeout = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(timeout)
     try:
         results = socket.getaddrinfo(hostname, None)
         for result in results:
@@ -129,19 +128,17 @@ def resolve_a_records(hostname: str, timeout: float = 3.0) -> list[str]:
                 ips.append(ip)
     except (socket.gaierror, socket.herror, OSError) as e:
         log.debug("DNS resolution failed for %s: %s", hostname, e)
-    finally:
-        socket.setdefaulttimeout(original_timeout)
     return ips
 
 
-def resolves_to_cdn(hostname: str, timeout: float = 3.0) -> bool:
+def resolves_to_cdn(hostname: str) -> bool:
     """
     Returns True if the hostname resolves to a known CDN/proxy IP range.
 
     This is a key behavioral signal: .arpa domains used in phishing typically
     resolve to Cloudflare or similar CDN IPs to mask the phishing server.
     """
-    ips = resolve_a_records(hostname, timeout=timeout)
+    ips = resolve_a_records(hostname)
     for ip_str in ips:
         if _is_cdn_ip(ip_str):
             log.info("%s → %s (CDN match)", hostname, ip_str)
@@ -149,22 +146,22 @@ def resolves_to_cdn(hostname: str, timeout: float = 3.0) -> bool:
     return False
 
 
-def resolves_at_all(hostname: str, timeout: float = 3.0) -> bool:
+def resolves_at_all(hostname: str) -> bool:
     """
     Returns True if the hostname resolves to any IP address.
 
     Context: Legitimate .arpa PTR-only names typically don't have A records.
     An .arpa hostname that resolves via A query is anomalous.
     """
-    return len(resolve_a_records(hostname, timeout=timeout)) > 0
+    return len(resolve_a_records(hostname)) > 0
 
 
-def get_resolution_summary(hostname: str, timeout: float = 3.0) -> dict:
+def get_resolution_summary(hostname: str) -> dict:
     """
     Returns a structured dict with resolution results and CDN analysis.
     Useful for both CLI output and Streamlit display.
     """
-    ips = resolve_a_records(hostname, timeout=timeout)
+    ips = resolve_a_records(hostname)
     cdn_hits = [ip for ip in ips if _is_cdn_ip(ip)]
 
     return {

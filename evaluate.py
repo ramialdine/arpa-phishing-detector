@@ -192,7 +192,7 @@ def save_csv(results: list[dict], path: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate .arpa phishing detector against test dataset.")
-    parser.add_argument("--dataset", default="data/test_dataset.csv", help="Path to test dataset CSV")
+    parser.add_argument("--dataset", default=os.path.join(os.path.dirname(__file__), "test_dataset.csv"), help="Path to test dataset CSV")
     parser.add_argument("--csv", metavar="OUTPUT_CSV", help="Save results to CSV file")
     args = parser.parse_args()
 

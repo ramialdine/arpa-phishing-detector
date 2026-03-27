@@ -14,10 +14,13 @@ The domain is never displayed to the user — only the image is visible.
 """
 
 import re
+import logging
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 from dataclasses import dataclass, field
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -131,30 +134,28 @@ def extract_links(email_content: str) -> list[ExtractedLink]:
         collector = _LinkCollector()
         try:
             collector.feed(email_content)
-            links.extend(collector.links)
+            for link in collector.links:
+                if link.url not in seen:
+                    seen.add(link.url)
+                    links.append(link)
         except Exception:
-            pass  # fallback to regex if HTML parsing fails
+            log.debug("HTML parsing failed, falling back to regex extraction")
 
         # Also extract href/src via regex as a backup
         for m in _HREF_RE.finditer(email_content):
             url = m.group(1)
             if url not in seen:
+                seen.add(url)
                 links.append(_make_link(url, source="href"))
 
     # --- Plaintext / regex extraction ---
     for m in _URL_RE.finditer(email_content):
         url = m.group(0).rstrip(".,;:!?)")
         if url not in seen:
+            seen.add(url)
             links.append(_make_link(url, source="plaintext"))
 
-    # Deduplicate, preserving order
-    deduped: list[ExtractedLink] = []
-    for link in links:
-        if link.url not in seen:
-            seen.add(link.url)
-            deduped.append(link)
-
-    return deduped
+    return links
 
 
 def extract_arpa_links(email_content: str) -> list[ExtractedLink]:

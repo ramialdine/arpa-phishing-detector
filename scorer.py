@@ -127,7 +127,7 @@ class Scorer:
     def score(self, features: Features, cdn_resolved: bool = False) -> ScoringResult:
         signals = self._build_signals(features, cdn_resolved)
         raw = sum(s.weight for s in signals if s.triggered)
-        final_score = min(raw, 100)
+        final_score = max(0, min(raw, 100))
         triggered = [s for s in signals if s.triggered]
         verdict = self._verdict(final_score)
         explanation = self._explain(final_score, verdict, triggered, features)

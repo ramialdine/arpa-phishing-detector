@@ -9,6 +9,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+import html as html_mod
 import streamlit as st
 from detector import analyze_url, analyze_hostname, extract_links, summarize_links
 from extractor import FeatureExtractor
@@ -146,11 +147,13 @@ def _render_result(result, compact: bool = False):
         if not compact:
             st.markdown("#### 🚨 Triggered Signals")
         for sig in result.triggered_signals:
-            detail_text = f" · `{sig.detail}`" if sig.detail else ""
+            safe_name = html_mod.escape(sig.name)
+            safe_desc = html_mod.escape(sig.description)
+            detail_text = f" · <code>{html_mod.escape(sig.detail)}</code>" if sig.detail else ""
             st.markdown(
                 f"""<div class="signal-card">
-                <b>[+{sig.weight} pts] {sig.name}</b>{detail_text}<br/>
-                <small>{sig.description}</small>
+                <b>[+{sig.weight} pts] {safe_name}</b>{detail_text}<br/>
+                <small>{safe_desc}</small>
                 </div>""",
                 unsafe_allow_html=True
             )
