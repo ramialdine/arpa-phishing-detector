@@ -46,7 +46,12 @@ def analyze_url(url: str, is_email_delivered: bool = False, run_dns: bool = Fals
 
     cdn_resolved = False
     if run_dns and features.hostname:
-        cdn_resolved = resolves_to_cdn(features.hostname)
+        dns_info = get_resolution_summary(features.hostname)
+        cdn_resolved = dns_info["cdn_resolved"]
+        features.dns_resolved = dns_info["resolved"]
+        features.dns_cdn_resolved = dns_info["cdn_resolved"]
+        features.dns_ips = ", ".join(dns_info["ip_addresses"])
+        features.dns_was_checked = True
 
     return Scorer().score(features, cdn_resolved=cdn_resolved)
 
@@ -68,6 +73,11 @@ def analyze_hostname(hostname: str, is_email_delivered: bool = False, run_dns: b
 
     cdn_resolved = False
     if run_dns and features.hostname:
-        cdn_resolved = resolves_to_cdn(features.hostname)
+        dns_info = get_resolution_summary(features.hostname)
+        cdn_resolved = dns_info["cdn_resolved"]
+        features.dns_resolved = dns_info["resolved"]
+        features.dns_cdn_resolved = dns_info["cdn_resolved"]
+        features.dns_ips = ", ".join(dns_info["ip_addresses"])
+        features.dns_was_checked = True
 
     return Scorer().score(features, cdn_resolved=cdn_resolved)
