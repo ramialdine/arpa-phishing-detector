@@ -8,7 +8,13 @@ Every triggered signal includes a human-readable explanation — no black box.
 
 from dataclasses import dataclass, field
 from typing import List
-from .extractor import Features
+
+try:
+    # Package-style import
+    from .extractor import Features
+except ImportError:
+    # Flat-layout fallback (running scripts from project root)
+    from extractor import Features
 
 
 # ---------------------------------------------------------------------------
