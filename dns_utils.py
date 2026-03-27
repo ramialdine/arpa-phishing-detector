@@ -30,7 +30,12 @@ log = logging.getLogger(__name__)
 
 _CDN_CIDRS_RAW = [
     # Cloudflare (documented in Infoblox report as abused provider)
+    # CDN/edge ranges
     "103.21.244.0/22",
+    # Cloudflare DNS resolver ranges (1.1.1.1, 1.0.0.1)
+    # These are used as test IPs and also appear in some phishing setups
+    "1.1.1.0/24",
+    "1.0.0.0/24",
     "103.22.200.0/22",
     "103.31.4.0/22",
     "104.16.0.0/13",
