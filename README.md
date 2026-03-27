@@ -194,12 +194,12 @@ SCORE  : [███████████████████████�
 VERDICT: 🔴  HIGH
 
 TRIGGERED SIGNALS:
-  [+25]  ARPA_TLD
+  [+15]  ARPA_TLD
   [+10]  IP6_ARPA_ZONE
   [+20]  IPV6_NIBBLE_PATTERN          (16 nibble labels found)
   [+10]  LONG_HOSTNAME                (40 chars)
   [+10]  PARTIAL_NIBBLE_DELEGATION    (16 nibbles — /64 block)
-  [+15]  RESOLVES_AS_A_RECORD         (resolved to: 1.1.1.1)
+  [+25]  RESOLVES_AS_A_RECORD         (resolved to: 1.1.1.1)
   [+10]  CDN_RESOLUTION               (CDN IP: 1.1.1.1)
 ```
 
@@ -236,7 +236,7 @@ The detector uses a **transparent, rule-based scoring system**. No machine learn
 
 | Signal | Weight | Rationale |
 |--------|--------|-----------|
-| `ARPA_TLD` | +25 | `.arpa` reserved for infrastructure; any web delivery is anomalous |
+| `ARPA_TLD` | +15 | `.arpa` reserved for infrastructure; a strong anchor but not sufficient alone |
 | `IP6_ARPA_ZONE` | +10 | IPv6 reverse-DNS zone — abused via free tunnel services |
 | `INADDR_ARPA_ZONE` | +5 | IPv4 reverse-DNS zone — less commonly abused |
 | `IPV6_NIBBLE_PATTERN` | +20 | Hex chars separated by dots before `ip6.arpa` — core attack structure |
@@ -244,9 +244,9 @@ The detector uses a **transparent, rule-based scoring system**. No machine learn
 | `LONG_HOSTNAME` | +10 | Length ≥ 40 chars — inherent to weaponized IPv6 FQDNs |
 | `VERY_LONG_HOSTNAME` | +5 | Length ≥ 70 chars — additive; full IPv6 strings with DGA prefix |
 | `PARTIAL_NIBBLE_DELEGATION` | +10 | 8–31 nibbles = attacker-controlled block, not single-host PTR |
-| `HTTP_CONTEXT` | +10 | `.arpa` used as web URL — the defining behavioral anomaly |
+| `HTTP_CONTEXT` | +12 | `.arpa` used as web URL — behavioral misuse signal |
 | `EMAIL_DELIVERED` | +10 | Matches known delivery pattern: image-wrapped href in email |
-| `RESOLVES_AS_A_RECORD` | +15 | `.arpa` domain returned an A record — core technical violation |
+| `RESOLVES_AS_A_RECORD` | +25 | `.arpa` domain returned an A/AAAA record — strongest technical violation |
 | `CDN_RESOLUTION` | +10 | Resolved IP in CDN range — attacker masks phishing host behind CDN |
 | `DNS_NO_RESPONSE` | +5 | DNS attempted but domain is dead — consistent with expired phishing asset |
 | `LIKELY_LEGIT_PTR` | **-25** | Full 32-nibble PTR with no DGA prefix and no HTTP context — likely legitimate |
